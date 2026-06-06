@@ -1,72 +1,13 @@
 """AST-based source code parser for symbol and edge extraction.
 
+Re-exports SymbolNode and Edge from sckg.parsers.base for backward
+compatibility, and re-exports parse_file and parse_directory from the
+multi-language dispatcher in sckg.parsers.
+
 Docs: parser.doc.md
 """
 
-from __future__ import annotations
+from sckg.parsers.base import Edge, SymbolNode
+from sckg.parsers import parse_directory, parse_file
 
-from typing import Any
-
-
-# ── Data Structures ───────────────────────────────────────────────────────
-
-class SymbolNode:
-    """Represents a code symbol (function, class, variable, module, etc.)."""
-
-    def __init__(
-        self,
-        name: str,
-        kind: str,  # function | class | module | variable | struct | interface | method | type
-        filepath: str,
-        line: int = 0,
-        docstring: str = "",
-        signature: str = "",
-        parent: str | None = None,
-    ):
-        self.name = name
-        self.kind = kind
-        self.filepath = filepath
-        self.line = line
-        self.docstring = docstring
-        self.signature = signature
-        self.parent = parent
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self._id(),
-            "name": self.name,
-            "kind": self.kind,
-            "filepath": self.filepath,
-            "line": self.line,
-            "docstring": self.docstring,
-            "signature": self.signature,
-            "parent": self.parent,
-        }
-
-    def _id(self) -> str:
-        # Unique ID: filepath::name (with parent for nested)
-        if self.parent:
-            return f"{self.filepath}::{self.parent}.{self.name}"
-        return f"{self.filepath}::{self.name}"
-
-
-class Edge:
-    """Represents a relationship between two symbols."""
-
-    def __init__(self, source: str, target: str, relation: str, line: int = 0):
-        self.source = source
-        self.target = target
-        self.relation = relation
-        self.line = line
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "source": self.source,
-            "target": self.target,
-            "relation": self.relation,
-            "line": self.line,
-        }
-
-
-# Re-export dispatcher API so existing callers (cli.py, graph.py, tests) keep working.
-from sckg.parsers import parse_directory, parse_file  # noqa: E402,F401
+__all__ = ["Edge", "SymbolNode", "parse_directory", "parse_file"]

@@ -11,6 +11,14 @@ src/sckg.egg-info/dependency_links.txt
 src/sckg.egg-info/entry_points.txt
 src/sckg.egg-info/requires.txt
 src/sckg.egg-info/top_level.txt
+src/sckg/parsers/__init__.py
+src/sckg/parsers/base.py
+src/sckg/parsers/go_parser.py
+src/sckg/parsers/python_parser.py
+src/sckg/parsers/typescript_parser.py
 tests/test_cli.py
+tests/test_dispatcher.py
+tests/test_go_parser.py
 tests/test_graph.py
 tests/test_parser.py
+tests/test_typescript_parser.py

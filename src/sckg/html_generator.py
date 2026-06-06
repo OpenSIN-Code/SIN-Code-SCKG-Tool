@@ -38,6 +38,10 @@ SUSPICIOUS_STROKE = "#FFC107"
 ENTRY_STROKE = "#4CAF50"
 DEAD_FILL = "#F44336"
 
+# Cross-repo edge styling
+CROSS_REPO_COLOR = "#9C27B0"
+CROSS_REPO_DASHARRAY = "5,5"
+
 
 def generate_html(
     graph_data: dict[str, Any],
@@ -53,6 +57,9 @@ def generate_html(
     When a ``report`` dict is provided (from ``DeadCodeReport.to_dict()``),
     dead nodes get a red border + red fill at 50% opacity, suspicious nodes
     get a yellow border, and entry points get a green border.
+
+    Cross-repo edges (``cross_repo_call`` and ``cross_repo_import``) are
+    rendered as purple dashed lines and added to the legend.
     """
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +77,20 @@ def generate_html(
         dead_ids = {n.get("id", "") for n in report.get("dead_nodes", [])}
         suspicious_ids = {n.get("id", "") for n in report.get("suspicious_nodes", [])}
         entry_ids = {n.get("id", "") for n in report.get("entry_points", [])}
+
+    # ── Edge styling: cross-repo edges get purple dashed lines ────────────
+    styled_edges = []
+    has_cross_repo = False
+    for e in edges:
+        edge = dict(e)
+        if edge.get("relation") in ("cross_repo_call", "cross_repo_import"):
+            edge["color"] = CROSS_REPO_COLOR
+            edge["stroke_dasharray"] = CROSS_REPO_DASHARRAY
+            has_cross_repo = True
+        else:
+            edge["color"] = None
+            edge["stroke_dasharray"] = None
+        styled_edges.append(edge)
 
     # Assign community colors as fallback for nodes without language
     community_colors = [
@@ -132,6 +153,13 @@ def generate_html(
   <div class="legend-item"><div class="legend-dot" style="background:transparent;border:2px solid {ENTRY_STROKE}"></div>Entry Point</div>
 </div>"""
 
+    # Cross-repo legend entry
+    cross_repo_legend_html = ""
+    if has_cross_repo:
+        cross_repo_legend_html = """  <div style="font-weight:bold; margin-bottom:6px; margin-top:10px;">Cross-Repo</div>
+  <div class="legend-item"><div style="width:20px; border-top:2px dashed #9C27B0;"></div>Cross-Repo Call</div>
+"""
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -183,7 +211,7 @@ def generate_html(
 <div id="graph"></div>
 <div id="info">
   <h3>SCKG Graph</h3>
-  <p>Nodes: {len(nodes)} | Edges: {len(edges)}</p>
+  <p>Nodes: {len(nodes)} | Edges: {len(styled_edges)}</p>
   <p>Communities: {len(community_centres)}</p>
   <p>Click a node to see details.</p>
 </div>
@@ -196,6 +224,7 @@ def generate_html(
   <div class="legend-item"><div class="legend-dot" style="background:#ff7f0e"></div>Function</div>
   <div class="legend-item"><div class="legend-dot" style="background:#1f77b4"></div>Class</div>
   <div class="legend-item"><div class="legend-dot" style="background:#2ca02c"></div>Module</div>
+{cross_repo_legend_html}
 </div>
 <div id="community-legend">
   <div style="font-weight:bold; margin-bottom:6px;">Community Colors</div>
@@ -204,7 +233,7 @@ def generate_html(
 {dead_code_legend_html}
 <script>
 const nodes = {json.dumps(nodes, ensure_ascii=False)};
-const links = {json.dumps(edges, ensure_ascii=False)};
+const links = {json.dumps(styled_edges, ensure_ascii=False)};
 const communityCentres = {json.dumps(community_centres, ensure_ascii=False)};
 const deadIds = new Set({json.dumps(list(dead_ids))});
 const suspiciousIds = new Set({json.dumps(list(suspicious_ids))});
@@ -235,7 +264,9 @@ const link = svg.append("g")
   .selectAll("line")
   .data(links)
   .join("line")
-  .attr("class", "link");
+  .attr("class", "link")
+  .attr("stroke", d => d.color || "#aaa")
+  .attr("stroke-dasharray", d => d.stroke_dasharray || null);
 
 const node = svg.append("g")
   .attr("class", "nodes")
