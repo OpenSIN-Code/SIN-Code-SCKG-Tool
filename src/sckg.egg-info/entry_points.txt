@@ -1,0 +1,2 @@
+[console_scripts]
+sckg = sckg.cli:main

@@ -1,0 +1,57 @@
+Metadata-Version: 2.4
+Name: sckg
+Version: 0.1.0
+Summary: Semantic Codebase Knowledge Graphs — Python-native code intelligence graph
+Author: SIN-Code Team
+License: MIT
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Software Development :: Libraries
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.9.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+
+# SCKG — Semantic Codebase Knowledge Graphs
+
+Python-native code intelligence graph. Replaces GitNexus with a lightweight, stable indexing engine built on the `ast` module.
+
+## CLI
+
+```bash
+# Build graph from a repo
+sckg index ./my-project --output graph.json
+
+# Query for symbols
+sckg query ./my-project "helper function"
+
+# Generate interactive HTML graph
+sckg graph ./my-project --output graph.html
+```
+
+## Install
+
+```bash
+pip install -e .
+symlink sckg to ~/.local/bin/ (or use pipx)
+```
+
+## Test
+
+```bash
+pytest tests/ -q
+```
+
+## Architecture
+
+- `parser.py` — AST visitor extracting symbols and edges
+- `graph.py` — adjacency-list graph with community detection
+- `html_generator.py` — D3.js force-directed single-file HTML
+- `cli.py` — Typer CLI (`index`, `query`, `graph`)
+
+## License
+
+MIT
