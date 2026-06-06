@@ -17,13 +17,14 @@ from sckg.hotpaths import compute_hot_paths
 from sckg.graph import KnowledgeGraph
 from sckg.html_generator import generate_html
 from sckg.parser import parse_directory
-from sckg.search import build_ngram_index, search, search_pattern
+from sckg.search import build_ngram_index, search as search_symbols, search_pattern
 from sckg.api.server import create_app, run_server
 from sckg.watcher import FileWatcher, watch_and_serve
 from sckg.similarity import find_similar
 from sckg.adr import generate_adrs
 from sckg.dashboard import generate_dashboard
 from sckg.hybrid_search import hybrid_search
+from sckg.api.schema import schema as strawberry_schema
 
 app = typer.Typer(help="SCKG — Semantic Codebase Knowledge Graphs")
 
@@ -404,7 +405,7 @@ def search(
         return
 
     index = build_ngram_index(graph)
-    results = search(query, graph, index, top_k=top)
+    results = search_symbols(query, graph, index, top_k=top)
 
     if not results:
         typer.echo("No matching symbols found.")
@@ -444,7 +445,7 @@ def graphql_schema(
     output: str = typer.Option(None, "--output", "-o", help="Output file (stdout if omitted)"),
 ) -> None:
     """Print the GraphQL schema (SDL) to stdout or file."""
-    sdl = str(schema)
+    sdl = str(strawberry_schema)
     if output:
         Path(output).write_text(sdl, encoding="utf-8")
         typer.echo(f"Schema written to {output}")
