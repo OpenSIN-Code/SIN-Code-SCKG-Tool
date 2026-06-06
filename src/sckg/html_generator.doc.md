@@ -5,8 +5,14 @@ Single-file HTML generator for D3.js force-directed graph visualization.
 ## What it does
 - Takes a JSON graph (nodes + edges + communities) and emits one `.html` file
 - Embeds D3.js via CDN (`d3.v7.min.js`) so no build step is required
-- Colors nodes by community and sizes them by symbol kind (class > function > module)
-- Clicking a node opens a detail panel (name, kind, file, line, signature, docstring)
+- Colors nodes by language and sizes them by symbol kind (class > function > module)
+- Adds community bounding boxes with language-tinted backgrounds:
+  - Python-dominant: `#E3F2FD` background, `#1976D2` border
+  - Go-dominant: `#E0F7FA` background, `#0097A7` border
+  - TypeScript-dominant: `#FFF3E0` background, `#F57C00` border
+  - Mixed: `#F3E5F5` background, `#7B1FA2` border
+- Uses D3 `forceX` / `forceY` with community centres to cluster nodes visually
+- Clicking a node opens a detail panel (name, kind, file, line, community, signature, docstring)
 
 ## Why single file
 - Users can open the HTML directly in any browser

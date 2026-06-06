@@ -118,6 +118,11 @@ class _SymbolExtractor(ast.NodeVisitor):
                 callee = self._name(child.func)
                 if callee:
                     self.edges.append(Edge(caller_id, callee, "calls", child.lineno))
+                # Detect cross-language subprocess calls (e.g. subprocess.run(["go_binary", ...]))
+                if callee and "subprocess" in callee:
+                    binary = self._extract_subprocess_binary(child)
+                    if binary:
+                        self.edges.append(Edge(caller_id, binary, "subprocess", child.lineno))
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -160,6 +165,25 @@ class _SymbolExtractor(ast.NodeVisitor):
         if isinstance(node, ast.Constant):
             return repr(node.value)
         return ""
+
+    def _extract_subprocess_binary(self, node: ast.Call) -> str | None:
+        """Extract the binary name from a subprocess.run/call/Popen call.
+
+        Looks for the first argument: a list ``["binary_name", ...]`` or a
+        string ``"binary_name"``.
+        """
+        if not node.args:
+            return None
+        first = node.args[0]
+        # subprocess.run(["binary_name", ...])
+        if isinstance(first, ast.List) and first.elts:
+            first_elt = first.elts[0]
+            if isinstance(first_elt, ast.Constant) and isinstance(first_elt.value, str):
+                return first_elt.value
+        # subprocess.run("binary_name")
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return first.value
+        return None
 
 
 def parse_file(filepath: str | Path) -> tuple[list[SymbolNode], list[Edge]]:

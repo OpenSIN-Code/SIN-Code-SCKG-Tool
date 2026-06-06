@@ -18,9 +18,11 @@ In-memory adjacency-list graph of code symbols with community detection.
 - This is O(n²) but fine for repos up to ~10K files (n = distinct directories)
 
 ## Files that import / touch it
-- `cli.py` — `index`, `query`, `graph` commands build and save graphs
+- `cli.py` — `index`, `query`, `graph`, `communities` commands build and save graphs
 - `html_generator.py` — reads `graph.nodes`, `graph.edges`, `graph.communities` for D3 output
+- `communities.py` — calls `detect_communities()` and `get_communities()` for language-aware clustering
 - `test_graph.py` — tests for building, saving, querying, and community detection
+- `test_communities.py` — tests for language-aware community detection
 
 ## Caveats
 - `find_symbol` is not fuzzy; it uses lowercase substring matching.

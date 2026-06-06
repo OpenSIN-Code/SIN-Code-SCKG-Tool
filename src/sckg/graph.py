@@ -8,10 +8,23 @@ from __future__ import annotations
 import json
 import os
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from sckg.parsers.base import Edge, SymbolNode
+
+
+@dataclass
+class Community:
+    """A detected community (cluster) of related code symbols."""
+
+    id: int
+    nodes: list[dict[str, Any]]
+    dominant_language: str
+    languages: dict[str, int]
+    size: int
+    density: float
 
 
 class KnowledgeGraph:
@@ -22,8 +35,9 @@ class KnowledgeGraph:
         self.edges: list[dict[str, Any]] = []
         self._adjacency: dict[str, set[str]] = defaultdict(set)
         self._communities: dict[str, str] | None = None
+        self._community_objects: list[Community] | None = None
 
-    # ── Building ──────────────────────────────────────────────────────────
+    # ── Building ───────────────────────────────────────────────────────────
 
     def add_symbol(self, symbol: SymbolNode) -> None:
         self.nodes[symbol._id()] = symbol.to_dict()
@@ -39,7 +53,7 @@ class KnowledgeGraph:
         for edge in edges:
             self.add_edge(edge)
 
-    # ── Persistence ───────────────────────────────────────────────────────
+    # ── Persistence ─────────────────────────────────────────────────────────
 
     def save_json(self, path: str | Path) -> None:
         """Serialize graph to JSON (adjacency list)."""
@@ -67,8 +81,9 @@ class KnowledgeGraph:
         for e in self.edges:
             self._adjacency[e["source"]].add(e["target"])
         self._communities = None  # will be recomputed on demand
+        self._community_objects = None
 
-    # ── Querying ──────────────────────────────────────────────────────────
+    # ── Querying ────────────────────────────────────────────────────────────
 
     def find_symbol(self, query: str) -> list[dict[str, Any]]:
         """Return nodes whose name or docstring matches the query."""
@@ -102,7 +117,7 @@ class KnowledgeGraph:
                 stack.append(target)
         return [self.nodes[nid] for nid in seen if nid in self.nodes and nid != node_id]
 
-    # ── Community Detection ───────────────────────────────────────────────
+    # ── Community Detection ─────────────────────────────────────────────────
 
     def detect_communities(self) -> dict[str, str]:
         """Simple heuristic: group by directory path (shared imports)."""
@@ -147,6 +162,43 @@ class KnowledgeGraph:
 
         self._communities = communities
         return communities
+
+    def detect_communities_by_language(self) -> dict[str, list[Community]]:
+        """Detect communities split by language, then cluster within each language.
+
+        Returns a dict mapping language → list of Community objects.
+        """
+        from sckg.communities import detect_language_communities
+
+        return detect_language_communities(self)
+
+    def get_communities(self, mixed: bool = False) -> list[Community]:
+        """Return Community objects for the graph.
+
+        Args:
+            mixed: If True, detect communities across all languages and mark
+                mixed communities (those containing multiple languages).
+                If False, group by language first, then cluster within each.
+        """
+        if mixed:
+            from sckg.communities import detect_mixed_communities
+
+            self._community_objects = detect_mixed_communities(self)
+        else:
+            from sckg.communities import detect_language_communities
+
+            lang_communities = detect_language_communities(self)
+            # Flatten into a single list with renumbered IDs
+            communities: list[Community] = []
+            for idx, comms in enumerate(lang_communities.values(), 1):
+                for comm in comms:
+                    comm.id = idx + len(communities) - 1
+                    communities.append(comm)
+            # Renumber IDs sequentially
+            for i, comm in enumerate(communities, 1):
+                comm.id = i
+            self._community_objects = communities
+        return self._community_objects
 
     def _communities_dict(self) -> dict[str, str]:
         if self._communities is None:
