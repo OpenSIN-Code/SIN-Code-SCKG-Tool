@@ -7,9 +7,10 @@ Docs: resolvers.doc.md
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, AsyncGenerator
 
 import strawberry
 from strawberry.types import Info
@@ -20,6 +21,8 @@ from sckg.dead_code import DeadCodeReport, find_dead_code
 from sckg.graph import KnowledgeGraph
 from sckg.hotpaths import HotNode, HotPathReport, compute_hot_paths
 from sckg.search import NgramIndex, SearchResult, build_ngram_index, search
+from sckg.similarity import find_similar, SimilarityResult as SimResult
+from sckg.adr import generate_adrs, ADR as ADRModel
 
 
 # ── Global state (loaded on first query) ──────────────────────────────────────
@@ -71,6 +74,7 @@ def _node_to_gql(node: dict[str, Any]) -> "Node":
         is_hot=node.get("is_hot", False),
         is_dead=node.get("is_dead", False),
         is_entry_point=node.get("is_entry_point", False),
+        repo=node.get("repo", ""),
     )
 
 
@@ -80,9 +84,10 @@ def resolve_nodes(
     info: Info,
     language: Optional[str] = None,
     type: Optional[str] = None,
+    repo: Optional[str] = None,
     limit: int = 100,
 ) -> list["Node"]:
-    """Return nodes with optional filtering by language and type."""
+    """Return nodes with optional filtering by language, type, and repo."""
     graph = _ensure_graph(info)
     from sckg.api.schema import Node
 
@@ -91,6 +96,8 @@ def resolve_nodes(
         if language and node.get("language") != language:
             continue
         if type and node.get("kind") != type:
+            continue
+        if repo and node.get("repo", "") != repo:
             continue
         nodes.append(_node_to_gql(node))
         if len(nodes) >= limit:
@@ -112,8 +119,9 @@ def resolve_edges(
     source: Optional[str] = None,
     target: Optional[str] = None,
     type: Optional[str] = None,
+    repo: Optional[str] = None,
 ) -> list["Edge"]:
-    """Return edges with optional filtering by source, target, or type."""
+    """Return edges with optional filtering by source, target, type, and repo."""
     graph = _ensure_graph(info)
     from sckg.api.schema import Edge
 
@@ -125,12 +133,15 @@ def resolve_edges(
             continue
         if type and edge.get("relation") != type:
             continue
+        if repo and edge.get("repo", "") != repo:
+            continue
         edges.append(Edge(
             id=edge.get("id", ""),
             source=edge.get("source", ""),
             target=edge.get("target", ""),
             type=edge.get("relation", ""),
             weight=edge.get("weight", 1.0),
+            repo=edge.get("repo", ""),
         ))
     return edges
 
@@ -252,3 +263,134 @@ def load_graph(graph_path: Path) -> KnowledgeGraph:
     graph = KnowledgeGraph()
     graph.load_json(graph_path)
     return graph
+
+
+# ── New Resolvers ──────────────────────────────────────────────────────────────
+
+def resolve_repos(info: Info) -> list[str]:
+    """Return list of repository names in the graph."""
+    graph = _ensure_graph(info)
+    return graph.get_repos()
+
+
+def resolve_cross_repo_edges(info: Info) -> list["Edge"]:
+    """Return edges that connect different repositories."""
+    graph = _ensure_graph(info)
+    from sckg.api.schema import Edge
+
+    edges = []
+    for edge in graph.get_cross_repo_edges():
+        edges.append(Edge(
+            id=edge.get("id", ""),
+            source=edge.get("source", ""),
+            target=edge.get("target", ""),
+            type=edge.get("relation", ""),
+            weight=edge.get("weight", 1.0),
+            repo=edge.get("repo", ""),
+        ))
+    return edges
+
+
+def resolve_similar(info: Info, node_id: str, top: int = 10, method: str = "jaccard") -> list["SimilarityResult"]:
+    """Find code symbols similar to the given node using structural analysis."""
+    graph = _ensure_graph(info)
+    from sckg.api.schema import SimilarityResult
+
+    results = find_similar(node_id, graph, top_k=top, method=method)
+    return [SimilarityResult(
+        node=_node_to_gql(r.node),
+        score=r.score,
+        method=r.method,
+        matched_features=r.matched_features,
+    ) for r in results]
+
+
+def resolve_adrs(info: Info) -> list["ADR"]:
+    """Return generated Architecture Decision Records."""
+    graph = _ensure_graph(info)
+    from sckg.api.schema import ADR
+
+    adrs = generate_adrs(graph)
+    return [ADR(
+        id=adr.id,
+        title=adr.title,
+        status=adr.status,
+        date=adr.date,
+        decision=adr.decision,
+        context=adr.context,
+        consequences=adr.consequences,
+        alternatives=adr.alternatives,
+        tags=adr.tags,
+    ) for adr in adrs]
+
+
+# ── Subscriptions ──────────────────────────────────────────────────────────────
+
+# Global event queues for subscriptions
+_graph_updated_queue: asyncio.Queue = asyncio.Queue()
+_node_changed_queues: dict[str, asyncio.Queue] = {}
+_hot_paths_changed_queues: dict[str, asyncio.Queue] = {}
+
+
+async def subscribe_graph_updated(info: Info) -> AsyncGenerator[str, None]:
+    """Subscribe to graph update events."""
+    queue = _graph_updated_queue
+    while True:
+        msg = await queue.get()
+        yield msg
+
+
+async def subscribe_node_changed(info: Info, repo: Optional[str] = None) -> AsyncGenerator[str, None]:
+    """Subscribe to node change events."""
+    key = repo or "all"
+    if key not in _node_changed_queues:
+        _node_changed_queues[key] = asyncio.Queue()
+    queue = _node_changed_queues[key]
+    while True:
+        msg = await queue.get()
+        yield msg
+
+
+async def subscribe_hot_paths_changed(info: Info, weight: str = "in_degree") -> AsyncGenerator[str, None]:
+    """Subscribe to hot paths recomputation events."""
+    if weight not in _hot_paths_changed_queues:
+        _hot_paths_changed_queues[weight] = asyncio.Queue()
+    queue = _hot_paths_changed_queues[weight]
+    while True:
+        msg = await queue.get()
+        yield msg
+
+
+def publish_graph_updated(message: str) -> None:
+    """Publish a graph updated event to all subscribers."""
+    try:
+        _graph_updated_queue.put_nowait(message)
+    except asyncio.QueueFull:
+        pass
+
+
+def publish_node_changed(repo: str, node_id: str, change_type: str) -> None:
+    """Publish a node changed event."""
+    msg = f"{repo}:{node_id}:{change_type}"
+    # Publish to repo-specific queue
+    if repo not in _node_changed_queues:
+        _node_changed_queues[repo] = asyncio.Queue()
+    try:
+        _node_changed_queues[repo].put_nowait(msg)
+    except asyncio.QueueFull:
+        pass
+    # Also publish to "all" queue
+    try:
+        _node_changed_queues["all"].put_nowait(msg)
+    except asyncio.QueueFull:
+        pass
+
+
+def publish_hot_paths_changed(weight: str, message: str) -> None:
+    """Publish a hot paths changed event."""
+    if weight not in _hot_paths_changed_queues:
+        _hot_paths_changed_queues[weight] = asyncio.Queue()
+    try:
+        _hot_paths_changed_queues[weight].put_nowait(message)
+    except asyncio.QueueFull:
+        pass

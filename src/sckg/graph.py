@@ -204,3 +204,74 @@ class KnowledgeGraph:
         if self._communities is None:
             self.detect_communities()
         return self._communities or {}
+
+    # ── Repo Support ──────────────────────────────────────────────────────────
+
+    def get_repos(self) -> list[str]:
+        """Return list of unique repository names in the graph."""
+        repos = set()
+        for node in self.nodes.values():
+            repo = node.get("repo", "")
+            if repo:
+                repos.add(repo)
+        for edge in self.edges:
+            repo = edge.get("repo", "")
+            if repo:
+                repos.add(repo)
+        return sorted(repos)
+
+    def filter_by_repo(self, repo_name: str) -> "KnowledgeGraph":
+        """Return a subgraph containing only nodes/edges from the given repo."""
+        subgraph = KnowledgeGraph()
+        # Filter nodes
+        node_ids = set()
+        for nid, node in self.nodes.items():
+            if node.get("repo", "") == repo_name:
+                subgraph.nodes[nid] = node
+                node_ids.add(nid)
+        # Filter edges where both endpoints are in the subgraph
+        for edge in self.edges:
+            if edge.get("repo", "") == repo_name:
+                if edge["source"] in node_ids and edge["target"] in node_ids:
+                    subgraph.edges.append(edge)
+                    subgraph._adjacency[edge["source"]].add(edge["target"])
+        return subgraph
+
+    def get_cross_repo_edges(self) -> list[dict[str, Any]]:
+        """Return edges where source and target belong to different repos."""
+        cross_edges = []
+        for edge in self.edges:
+            src_repo = self.nodes.get(edge["source"], {}).get("repo", "")
+            tgt_repo = self.nodes.get(edge["target"], {}).get("repo", "")
+            if src_repo and tgt_repo and src_repo != tgt_repo:
+                cross_edges.append(edge)
+        return cross_edges
+
+    # ── Incremental Updates ──────────────────────────────────────────────────
+
+    def remove_nodes_by_file(self, filepath: str) -> int:
+        """Remove all nodes from a specific file. Returns count of removed nodes."""
+        to_remove = [nid for nid, node in self.nodes.items() if node.get("filepath", "") == filepath]
+        for nid in to_remove:
+            del self.nodes[nid]
+            # Remove from adjacency
+            self._adjacency.pop(nid, None)
+            for src in self._adjacency:
+                self._adjacency[src].discard(nid)
+        # Remove edges involving removed nodes
+        self.edges = [e for e in self.edges if e["source"] not in to_remove and e["target"] not in to_remove]
+        # Invalidate communities
+        self._communities = None
+        self._community_objects = None
+        return len(to_remove)
+
+    def upsert_file(self, filepath: str, symbols: list[SymbolNode], edges: list[Edge]) -> None:
+        """Add or update nodes/edges from a specific file."""
+        # First remove existing nodes from this file
+        self.remove_nodes_by_file(filepath)
+        # Add new symbols
+        for sym in symbols:
+            self.add_symbol(sym)
+        # Add new edges
+        for edge in edges:
+            self.add_edge(edge)

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-06 — Cross-repo GraphQL, Incremental Watcher, Code Similarity, ADR Export, Subscriptions
+
+### Added
+- **Cross-repo GraphQL queries** — `nodes(repo:)`, `edges(repo:)`, `repos`, `cross_repo_edges` queries
+- **Incremental file watcher** (`sckg watch` CLI) — watchdog-based, debounced, updates graph + GraphQL live
+- **Code similarity search** (`sckg similar` CLI + GraphQL `similar` query) — Jaccard/cosine/AST structural similarity
+- **ADR generation** (`sckg adr` CLI + GraphQL `adrs` query) — from cross-repo edges, mixed communities, hot paths, dead code, circular deps
+- **GraphQL Subscriptions** — `graph_updated`, `node_changed`, `hot_paths_changed` for real-time dashboards
+- Repo field on Node/Edge types for multi-repo filtering
+- Incremental graph updates: `remove_nodes_by_file`, `upsert_file`, `filter_by_repo`, `get_cross_repo_edges`, `get_repos`
+- Circular repository dependency detection
+- 13 new tests (watcher: 5, similarity: 5, ADR: 3) — 77 total tests, 100% passing
+
+### Changed
+- `KnowledgeGraph` extended with repo support and incremental update methods
+- `html_generator.py` — search panel, hot-path visualization, community labels
+- `cli.py` added `watch`, `similar`, `adr` commands
+- Dependencies: added `watchdog>=3.0.0`
+- GraphQL schema now includes `Subscription` type and `repo` filters
+
+### Fixed
+- N/A (all additions, no breaking changes)
+
 ## [0.4.0] - 2026-06-06 — Hot-paths, N-gram search, GraphQL API
 
 ### Added

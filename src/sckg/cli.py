@@ -19,6 +19,9 @@ from sckg.html_generator import generate_html
 from sckg.parser import parse_directory
 from sckg.search import build_ngram_index, search, search_pattern
 from sckg.api.server import create_app, run_server
+from sckg.watcher import FileWatcher, watch_and_serve
+from sckg.similarity import find_similar
+from sckg.adr import generate_adrs
 
 app = typer.Typer(help="SCKG — Semantic Codebase Knowledge Graphs")
 
@@ -421,3 +424,105 @@ def graphql_schema(
         typer.echo(f"Schema written to {output}")
     else:
         typer.echo(sdl)
+
+
+@app.command()
+def watch(
+    repo_path: str = typer.Argument(..., help="Path to the repository to watch"),
+    graph_path: str = typer.Option("sckg_graph.json", "--graph-path", "-g", help="Path to the JSON graph file"),
+    host: str = typer.Option("0.0.0.0", "--host", help="Host to bind GraphQL server"),
+    port: int = typer.Option(8080, "--port", help="Port to bind GraphQL server"),
+) -> None:
+    """Watch a repository for changes and serve GraphQL API with live updates."""
+    import asyncio
+    repo = Path(repo_path).resolve()
+    graph = Path(graph_path).resolve()
+
+    if not repo.exists():
+        typer.echo(f"Error: repo path not found: {repo}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Starting watcher for {repo} with GraphQL on http://{host}:{port}")
+    asyncio.run(watch_and_serve(repo, graph, host=host, port=port))
+
+
+@app.command()
+def similar(
+    repo_path: str = typer.Argument(..., help="Path to the repository (or path to existing JSON graph)"),
+    node_id: str = typer.Argument(..., help="Node ID or name to find similar functions for"),
+    top: int = typer.Option(10, "--top", "-n", help="Number of results to return"),
+    method: str = typer.Option("ast", "--method", "-m", help="Similarity method: jaccard, cosine, ast"),
+) -> None:
+    """Find code symbols similar to the given node using structural analysis."""
+    repo = Path(repo_path).resolve()
+
+    if repo.is_file() and repo.suffix == ".json":
+        graph = KnowledgeGraph()
+        graph.load_json(repo)
+    else:
+        if not repo.exists():
+            typer.echo(f"Error: path not found: {repo}", err=True)
+            raise typer.Exit(1)
+        symbols, edges = parse_directory(repo)
+        graph = KnowledgeGraph()
+        graph.build_from_parser(symbols, edges)
+
+    # Find node by ID or name
+    target_nid = None
+    if node_id in graph.nodes:
+        target_nid = node_id
+    else:
+        # Search by name
+        for nid, node in graph.nodes.items():
+            if node.get("name") == node_id:
+                target_nid = nid
+                break
+
+    if not target_nid:
+        typer.echo(f"Error: node not found: {node_id}", err=True)
+        raise typer.Exit(1)
+
+    results = find_similar(target_nid, graph, top_k=top, method=method)
+
+    if not results:
+        typer.echo("No similar symbols found.")
+        raise typer.Exit(0)
+
+    typer.echo(f"Found {len(results)} similar symbol(s) to '{graph.nodes[target_nid].get('name', target_nid)}' (method={method}):")
+    for i, r in enumerate(results, 1):
+        node = r.node
+        kind_emoji = {"function": "⚙️", "class": "📦", "module": "📁"}.get(node.get("kind"), "🔹")
+        lang_label = f" [{node.get('language', '?')}]" if node.get("language") else ""
+        typer.echo(f"  {i}. {kind_emoji} {node['name']} ({node['kind']}){lang_label} — {node['filepath']}:{node['line']}")
+        typer.echo(f"     Score: {r.score:.3f} | Matched: {', '.join(r.matched_features) if r.matched_features else 'none'}")
+
+
+@app.command()
+def adr(
+    repo_path: str = typer.Argument(..., help="Path to the repository (or path to existing JSON graph)"),
+    output_dir: str = typer.Option("./adrs", "--output-dir", "-o", help="Output directory for ADR files"),
+) -> None:
+    """Generate Architecture Decision Records from graph analysis."""
+    repo = Path(repo_path).resolve()
+
+    if repo.is_file() and repo.suffix == ".json":
+        graph = KnowledgeGraph()
+        graph.load_json(repo)
+    else:
+        if not repo.exists():
+            typer.echo(f"Error: path not found: {repo}", err=True)
+            raise typer.Exit(1)
+        symbols, edges = parse_directory(repo)
+        graph = KnowledgeGraph()
+        graph.build_from_parser(symbols, edges)
+
+    out_dir = Path(output_dir)
+    adrs = generate_adrs(graph, out_dir)
+
+    if not adrs:
+        typer.echo("No significant findings for ADR generation.")
+        raise typer.Exit(0)
+
+    typer.echo(f"Generated {len(adrs)} ADR(s) in {out_dir}:")
+    for adr in adrs:
+        typer.echo(f"  {adr.id}: {adr.title} [{adr.status}]")

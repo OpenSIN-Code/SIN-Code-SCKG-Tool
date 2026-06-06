@@ -21,6 +21,7 @@ class SymbolNode:
         signature: str = "",
         parent: str | None = None,
         language: str = "python",
+        repo: str = "",
     ):
         self.name = name
         self.kind = kind
@@ -30,6 +31,7 @@ class SymbolNode:
         self.signature = signature
         self.parent = parent
         self.language = language
+        self.repo = repo
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +44,7 @@ class SymbolNode:
             "signature": self.signature,
             "parent": self.parent,
             "language": self.language,
+            "repo": self.repo,
         }
 
     def _id(self) -> str:
@@ -54,11 +57,12 @@ class SymbolNode:
 class Edge:
     """Represents a relationship between two symbols."""
 
-    def __init__(self, source: str, target: str, relation: str, line: int = 0):
+    def __init__(self, source: str, target: str, relation: str, line: int = 0, repo: str = ""):
         self.source = source
         self.target = target
         self.relation = relation
         self.line = line
+        self.repo = repo
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,4 +70,5 @@ class Edge:
             "target": self.target,
             "relation": self.relation,
             "line": self.line,
+            "repo": self.repo,
         }

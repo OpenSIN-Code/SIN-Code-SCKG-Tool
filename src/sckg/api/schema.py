@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import strawberry
 from strawberry.types import Info
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, AsyncGenerator, AsyncIterator
 import json
 
 
@@ -29,6 +29,7 @@ class Node:
     is_hot: bool
     is_dead: bool
     is_entry_point: bool
+    repo: str
 
 
 @strawberry.type
@@ -40,6 +41,7 @@ class Edge:
     target: str
     type: str
     weight: float
+    repo: str
 
 
 @strawberry.type
@@ -105,6 +107,31 @@ class Stats:
     coverage_pct: float
 
 
+@strawberry.type
+class SimilarityResult:
+    """A code similarity search result."""
+
+    node: Node
+    score: float
+    method: str
+    matched_features: List[str]
+
+
+@strawberry.type
+class ADR:
+    """An Architecture Decision Record."""
+
+    id: str
+    title: str
+    status: str
+    date: str
+    decision: str
+    context: str
+    consequences: str
+    alternatives: str
+    tags: List[str]
+
+
 # ── JSON scalar for flexible stats output ────────────────────────────────────
 
 @strawberry.type
@@ -134,12 +161,13 @@ class Query:
         info: Info,
         language: Optional[str] = None,
         type: Optional[str] = None,
+        repo: Optional[str] = None,
         limit: int = 100,
     ) -> List[Node]:
-        """Return nodes with optional filtering by language and type."""
+        """Return nodes with optional filtering by language, type, and repo."""
         from sckg.api.resolvers import resolve_nodes
 
-        return resolve_nodes(info, language=language, type=type, limit=limit)
+        return resolve_nodes(info, language=language, type=type, repo=repo, limit=limit)
 
     @strawberry.field
     def node(self, info: Info, id: str) -> Optional[Node]:
@@ -155,11 +183,12 @@ class Query:
         source: Optional[str] = None,
         target: Optional[str] = None,
         type: Optional[str] = None,
+        repo: Optional[str] = None,
     ) -> List[Edge]:
-        """Return edges with optional filtering by source, target, or type."""
+        """Return edges with optional filtering by source, target, type, and repo."""
         from sckg.api.resolvers import resolve_edges
 
-        return resolve_edges(info, source=source, target=target, type=type)
+        return resolve_edges(info, source=source, target=target, type=type, repo=repo)
 
     @strawberry.field
     def communities(self, info: Info) -> List[Community]:
@@ -198,5 +227,65 @@ class Query:
 
         return resolve_stats(info)
 
+    @strawberry.field
+    def repos(self, info: Info) -> List[str]:
+        """Return list of repository names in the graph."""
+        from sckg.api.resolvers import resolve_repos
 
-schema = strawberry.Schema(query=Query)
+        return resolve_repos(info)
+
+    @strawberry.field
+    def cross_repo_edges(self, info: Info) -> List[Edge]:
+        """Return edges that connect different repositories."""
+        from sckg.api.resolvers import resolve_cross_repo_edges
+
+        return resolve_cross_repo_edges(info)
+
+    @strawberry.field
+    def similar(self, info: Info, node_id: str, top: int = 10, method: str = "jaccard") -> List[SimilarityResult]:
+        """Find code symbols similar to the given node using structural analysis."""
+        from sckg.api.resolvers import resolve_similar
+
+        return resolve_similar(info, node_id=node_id, top=top, method=method)
+
+    @strawberry.field
+    def adrs(self, info: Info) -> List[ADR]:
+        """Return generated Architecture Decision Records."""
+        from sckg.api.resolvers import resolve_adrs
+
+        return resolve_adrs(info)
+
+
+# ── Subscription ──────────────────────────────────────────────────────────────
+
+
+@strawberry.type
+class Subscription:
+    """GraphQL subscriptions for real-time updates."""
+
+    @strawberry.subscription
+    async def graph_updated(self, info: Info) -> AsyncIterator[str]:
+        """Fires when the graph is updated (full reload or incremental)."""
+        from sckg.api.resolvers import subscribe_graph_updated
+
+        async for msg in subscribe_graph_updated(info):
+            yield msg
+
+    @strawberry.subscription
+    async def node_changed(self, info: Info, repo: Optional[str] = None) -> AsyncIterator[str]:
+        """Fires when a node is added, updated, or deleted."""
+        from sckg.api.resolvers import subscribe_node_changed
+
+        async for msg in subscribe_node_changed(info, repo=repo):
+            yield msg
+
+    @strawberry.subscription
+    async def hot_paths_changed(self, info: Info, weight: str = "in_degree") -> AsyncIterator[str]:
+        """Fires when hot paths are recomputed."""
+        from sckg.api.resolvers import subscribe_hot_paths_changed
+
+        async for msg in subscribe_hot_paths_changed(info, weight=weight):
+            yield msg
+
+
+schema = strawberry.Schema(query=Query, subscription=Subscription)
