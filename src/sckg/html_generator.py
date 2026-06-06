@@ -42,11 +42,17 @@ DEAD_FILL = "#F44336"
 CROSS_REPO_COLOR = "#9C27B0"
 CROSS_REPO_DASHARRAY = "5,5"
 
+# Hot paths visual markers
+HOT_STROKE = "#FFD700"
+HOT_STROKE_WIDTH = 4
+HOT_GLOW = "0 0 8px #FFD700"
+
 
 def generate_html(
     graph_data: dict[str, Any],
     output_path: str | Path,
     report: dict[str, Any] | None = None,
+    hot_paths: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Write a single-file HTML with embedded D3.js force graph.
 
@@ -60,6 +66,9 @@ def generate_html(
 
     Cross-repo edges (``cross_repo_call`` and ``cross_repo_import``) are
     rendered as purple dashed lines and added to the legend.
+
+    When ``hot_paths`` is provided (from ``HotPathReport.hot_nodes``),
+    hot nodes get a gold border, glow effect, and size proportional to score.
     """
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +86,14 @@ def generate_html(
         dead_ids = {n.get("id", "") for n in report.get("dead_nodes", [])}
         suspicious_ids = {n.get("id", "") for n in report.get("suspicious_nodes", [])}
         entry_ids = {n.get("id", "") for n in report.get("entry_points", [])}
+
+    # Hot paths: map node_id -> {score, rank}
+    hot_map: dict[str, dict[str, Any]] = {}
+    if hot_paths:
+        for hp in hot_paths:
+            nid = hp.get("node", {}).get("id", "")
+            if nid:
+                hot_map[nid] = {"score": hp.get("score", 0), "rank": hp.get("rank", 0)}
 
     # ── Edge styling: cross-repo edges get purple dashed lines ────────────
     styled_edges = []
@@ -140,7 +157,25 @@ def generate_html(
     for n in nodes:
         lang = n.get("language")
         n["color"] = LANGUAGE_COLORS.get(lang, comm_to_color.get(communities.get(n["id"], "default"), DEFAULT_LANGUAGE_COLOR))
-        n["radius"] = 8 if n.get("kind") == "function" else 10 if n.get("kind") == "class" else 6
+
+        # Base radius by kind
+        base_radius = 8 if n.get("kind") == "function" else 10 if n.get("kind") == "class" else 6
+
+        # Hot path sizing: scale radius by score (min base, max 20)
+        nid = n.get("id", "")
+        if nid in hot_map:
+            hp = hot_map[nid]
+            # Normalize score to 0-1 range and scale to +12px max
+            max_score = max((h["score"] for h in hot_map.values()), default=1)
+            score_ratio = hp["score"] / max_score if max_score > 0 else 0
+            n["radius"] = base_radius + score_ratio * 12
+            n["is_hot"] = True
+            n["hot_rank"] = hp["rank"]
+            n["hot_score"] = hp["score"]
+        else:
+            n["radius"] = base_radius
+            n["is_hot"] = False
+
         n["community"] = community_node_map.get(n["id"], -1)
 
     # Build legend HTML for dead-code categories (only when report is present)
@@ -158,7 +193,14 @@ def generate_html(
     if has_cross_repo:
         cross_repo_legend_html = """  <div style="font-weight:bold; margin-bottom:6px; margin-top:10px;">Cross-Repo</div>
   <div class="legend-item"><div style="width:20px; border-top:2px dashed #9C27B0;"></div>Cross-Repo Call</div>
-"""
+ """
+
+    # Hot paths legend entry
+    hot_paths_legend_html = ""
+    if hot_paths:
+        hot_paths_legend_html = f"""  <div style="font-weight:bold; margin-bottom:6px; margin-top:10px;">Hot Paths</div>
+  <div class="legend-item"><div class="legend-dot" style="background:transparent;border:3px solid {HOT_STROKE};box-shadow:{HOT_GLOW}"></div>Hot Path (gold border, sized by score)</div>
+ """
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -195,6 +237,25 @@ def generate_html(
     position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7);
     padding: 10px; border-radius: 8px; font-size: 12px;
   }}
+  #search-panel {{
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.85); padding: 12px; border-radius: 8px;
+    z-index: 100; min-width: 400px;
+  }}
+  #search-input {{
+    width: 100%; padding: 8px 12px; border-radius: 6px; border: none;
+    font-size: 14px; background: #2a2a2a; color: #eee;
+  }}
+  #search-input:focus {{ outline: 2px solid #FFD700; }}
+  #search-results {{ max-height: 200px; overflow-y: auto; margin-top: 8px; }}
+  .search-result-item {{
+    padding: 6px 10px; border-radius: 4px; cursor: pointer;
+    background: #2a2a2a; margin-bottom: 4px; font-size: 12px;
+    border-left: 3px solid #4A90D9;
+  }}
+  .search-result-item:hover {{ background: #3a3a3a; }}
+  .search-result-name {{ font-weight: bold; }}
+  .search-result-meta {{ color: #aaa; font-size: 11px; }}
   .legend-item {{ display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }}
   .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
   .legend-box {{ width: 12px; height: 12px; border-radius: 2px; }}
@@ -209,11 +270,15 @@ def generate_html(
 </head>
 <body>
 <div id="graph"></div>
+<div id="search-panel">
+  <input type="text" id="search-input" placeholder="Search: type to find functions, classes... (e.g., 'parse json', 'handle error')" autocomplete="off">
+  <div id="search-results"></div>
+</div>
 <div id="info">
   <h3>SCKG Graph</h3>
   <p>Nodes: {len(nodes)} | Edges: {len(styled_edges)}</p>
   <p>Communities: {len(community_centres)}</p>
-  <p>Click a node to see details.</p>
+  <p>Click a node to see details. Type in search box above to find symbols.</p>
 </div>
 <div id="language-legend">
   <div style="font-weight:bold; margin-bottom:6px;">Language</div>
@@ -225,6 +290,7 @@ def generate_html(
   <div class="legend-item"><div class="legend-dot" style="background:#1f77b4"></div>Class</div>
   <div class="legend-item"><div class="legend-dot" style="background:#2ca02c"></div>Module</div>
 {cross_repo_legend_html}
+{hot_paths_legend_html}
 </div>
 <div id="community-legend">
   <div style="font-weight:bold; margin-bottom:6px;">Community Colors</div>
@@ -238,11 +304,20 @@ const communityCentres = {json.dumps(community_centres, ensure_ascii=False)};
 const deadIds = new Set({json.dumps(list(dead_ids))});
 const suspiciousIds = new Set({json.dumps(list(suspicious_ids))});
 const entryIds = new Set({json.dumps(list(entry_ids))});
+const hotMap = {json.dumps(hot_map, ensure_ascii=False)};
 
 const width = window.innerWidth;
 const height = window.innerHeight;
 
 const svg = d3.select("#graph").append("svg").attr("width", width).attr("height", height);
+
+// Hot path glow filter
+const defs = svg.append("defs");
+const filter = defs.append("filter").attr("id", "hot-glow");
+filter.append("feGaussianBlur").attr("stdDeviation", "4").attr("result", "coloredBlur");
+const feMerge = filter.append("feMerge");
+feMerge.append("feMergeNode").attr("in", "coloredBlur");
+feMerge.append("feMergeNode").attr("in", "SourceGraphic");
 
 const simulation = d3.forceSimulation(nodes)
   .force("link", d3.forceLink(links).id(d => d.id).distance(100))
@@ -281,14 +356,17 @@ const node = svg.append("g")
     if (deadIds.has(d.id)) return "{DEAD_STROKE}";
     if (suspiciousIds.has(d.id)) return "{SUSPICIOUS_STROKE}";
     if (entryIds.has(d.id)) return "{ENTRY_STROKE}";
+    if (hotMap[d.id]) return "{HOT_STROKE}";
     return "#fff";
   }})
   .attr("stroke-width", d => {{
     if (deadIds.has(d.id)) return 3;
     if (suspiciousIds.has(d.id)) return 2;
     if (entryIds.has(d.id)) return 2;
+    if (hotMap[d.id]) return {HOT_STROKE_WIDTH};
     return 1.5;
   }})
+  .attr("filter", d => hotMap[d.id] ? "url(#hot-glow)" : null)
   .call(d3.drag()
     .on("start", (event, d) => {{ if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }})
     .on("drag", (event, d) => {{ d.fx = event.x; d.fy = event.y; }})
@@ -313,6 +391,8 @@ node.on("click", (event, d) => {{
     extra = `<p style="color:#FFC107;font-weight:bold;">SUSPICIOUS — 1 reference</p>`;
   }} else if (entryIds.has(d.id)) {{
     extra = `<p style="color:#4CAF50;font-weight:bold;">ENTRY POINT</p>`;
+  }} else if (hotMap[d.id]) {{
+    extra = `<p style="color:#FFD700;font-weight:bold;">HOT PATH #${{hotMap[d.id].rank}} — score: ${{hotMap[d.id].score.toFixed(2)}}</p>`;
   }}
   info.innerHTML = `<h3>${{d.name}}</h3>
     <p><strong>Kind:</strong> ${{d.kind}}</p>
@@ -323,6 +403,78 @@ node.on("click", (event, d) => {{
     <p><strong>Signature:</strong> <code>${{d.signature || "N/A"}}</code></p>
     <p><strong>Docstring:</strong> ${{d.docstring || "None"}}</p>`
     + extra;
+}});
+
+// ── Search functionality ──────────────────────────────────────────────
+const searchInput = document.getElementById("search-input");
+const searchResults = document.getElementById("search-results");
+
+function tokenizeQuery(q) {{
+  return q.toLowerCase().split(/[\\s_]+/).filter(t => t.length > 1);
+}}
+
+function scoreNode(node, queryTokens) {{
+  let score = 0;
+  const name = (node.name || "").toLowerCase();
+  const docstring = (node.docstring || "").toLowerCase();
+  const filepath = (node.filepath || "").toLowerCase();
+
+  for (const token of queryTokens) {{
+    if (name.includes(token)) score += 10;
+    if (docstring.includes(token)) score += 3;
+    if (filepath.includes(token)) score += 1;
+    // Bonus for prefix match
+    if (name.startsWith(token)) score += 5;
+  }}
+  return score;
+}}
+
+function renderSearchResults(query) {{
+  const tokens = tokenizeQuery(query);
+  if (tokens.length === 0) {{
+    searchResults.innerHTML = "";
+    return;
+  }}
+
+  const scored = nodes.map(n => ({{node: n, score: scoreNode(n, tokens)}}))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+
+  if (scored.length === 0) {{
+    searchResults.innerHTML = '<div class="search-result-item">No matches found</div>';
+    return;
+  }}
+
+  searchResults.innerHTML = scored.map(x => `
+    <div class="search-result-item" data-id="${{x.node.id}}">
+      <div class="search-result-name">${{x.node.name}} (${{x.node.kind}})${{x.node.language ? " [" + x.node.language + "]" : ""}}</div>
+      <div class="search-result-meta">${{x.node.filepath}}:${{x.node.line}} | score: ${{x.score}}</div>
+    </div>
+  `).join("");
+
+  // Click handler for results
+  document.querySelectorAll(".search-result-item").forEach(el => {{
+    el.addEventListener("click", () => {{
+      const nid = el.dataset.id;
+      const nodeData = nodes.find(n => n.id === nid);
+      if (nodeData) {{
+        // Center on node
+        simulation.alphaTarget(0.3).restart();
+        nodeData.fx = width / 2;
+        nodeData.fy = height / 2;
+        // Trigger click to show info
+        const circle = d3.select(`.nodes`).selectAll("circle").filter(d => d.id === nid);
+        circle.dispatch("click");
+        // Clear after centering
+        setTimeout(() => {{ nodeData.fx = null; nodeData.fy = null; }}, 1000);
+      }}
+    }});
+  }});
+}}
+
+searchInput.addEventListener("input", (e) => {{
+  renderSearchResults(e.target.value);
 }});
 
 function updateCommunityBounds() {{

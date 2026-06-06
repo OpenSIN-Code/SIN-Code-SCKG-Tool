@@ -13,9 +13,12 @@ import typer
 from sckg.communities import resolve_cross_language_edges
 from sckg.cross_repo import build_cross_repo_graph, find_repos_in_workspace
 from sckg.dead_code import find_dead_code
+from sckg.hotpaths import compute_hot_paths
 from sckg.graph import KnowledgeGraph
 from sckg.html_generator import generate_html
 from sckg.parser import parse_directory
+from sckg.search import build_ngram_index, search, search_pattern
+from sckg.api.server import create_app, run_server
 
 app = typer.Typer(help="SCKG — Semantic Codebase Knowledge Graphs")
 
@@ -173,7 +176,9 @@ def graph(
         }
 
     report = find_dead_code(kg).to_dict()
-    out_path = generate_html(data, output, report=report)
+    hot_report = compute_hot_paths(kg, top_n=50, weight="in_degree")
+    hot_paths_data = hot_report.to_dict().get("hot_nodes", [])
+    out_path = generate_html(data, output, report=report, hot_paths=hot_paths_data)
     typer.echo(f"Interactive graph written to {out_path}")
     typer.echo(f"Open it with: open {out_path}")
 
@@ -288,3 +293,131 @@ def dead_code(
 
 def main() -> None:
     app()
+
+
+@app.command(name="hot-paths")
+def hot_paths(
+    repo_path: str = typer.Argument(..., help="Path to the repository (or path to existing JSON graph)"),
+    top: int = typer.Option(20, "--top", "-n", help="Number of top hot paths to show"),
+    weight: str = typer.Option("in_degree", "--weight", "-w", help="Weight method: in_degree, out_degree, betweenness, pagerank"),
+    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json"),
+) -> None:
+    """Show the most frequently called functions (hot paths) in the codebase."""
+    repo = Path(repo_path).resolve()
+
+    if repo.is_file() and repo.suffix == ".json":
+        graph = KnowledgeGraph()
+        graph.load_json(repo)
+    else:
+        if not repo.exists():
+            typer.echo(f"Error: path not found: {repo}", err=True)
+            raise typer.Exit(1)
+        symbols, edges = parse_directory(repo)
+        graph = KnowledgeGraph()
+        graph.build_from_parser(symbols, edges)
+
+    try:
+        report = compute_hot_paths(graph, top_n=top, weight=weight)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if format == "json":
+        typer.echo(report.to_dict())
+        return
+
+    # Table output
+    typer.echo(f"Hot Paths (weight={weight}, top={top}):")
+    typer.echo(f"Total nodes in graph: {report.total_nodes}")
+    typer.echo("")
+    typer.echo(f"{'Rank':>4} {'Function':<30} {'File':<35} {'Score':>10} {'In':>4} {'Out':>4}")
+    typer.echo("-" * 95)
+    for hn in report.hot_nodes:
+        node = hn.node
+        name = node.get("name", "?")
+        filepath = node.get("filepath", "?")
+        # Truncate long names/paths for table display
+        if len(name) > 28:
+            name = name[:25] + "..."
+        if len(filepath) > 33:
+            filepath = "..." + filepath[-30:]
+        typer.echo(f"{hn.rank:>4} {name:<30} {filepath:<35} {hn.score:>10.3f} {hn.in_degree:>4} {hn.out_degree:>4}")
+
+    # Summary line
+    top_node = report.hot_nodes[0] if report.hot_nodes else None
+    if top_node:
+        typer.echo(f"\nTop hot path: {top_node.node.get('name', '?')} (score: {top_node.score:.3f}, method: {weight})")
+
+
+@app.command()
+def search(
+    repo_path: str = typer.Argument(..., help="Path to the repository (or path to existing JSON graph)"),
+    query: str = typer.Argument(..., help="Search query string"),
+    top: int = typer.Option(10, "--top", "-n", help="Number of results to return"),
+    ngram_size: str = typer.Option("1,2,3", "--ngram-size", help="Comma-separated n-gram sizes (e.g., 1,2,3)"),
+    pattern: bool = typer.Option(False, "--pattern", "-p", help="Use wildcard pattern search instead of n-gram search"),
+) -> None:
+    """Search the knowledge graph for symbols matching the query."""
+    repo = Path(repo_path).resolve()
+
+    if repo.is_file() and repo.suffix == ".json":
+        graph = KnowledgeGraph()
+        graph.load_json(repo)
+    else:
+        if not repo.exists():
+            typer.echo(f"Error: path not found: {repo}", err=True)
+            raise typer.Exit(1)
+        symbols, edges = parse_directory(repo)
+        graph = KnowledgeGraph()
+        graph.build_from_parser(symbols, edges)
+
+    if pattern:
+        results = search_pattern(query, graph, top_k=top)
+    else:
+        index = build_ngram_index(graph)
+        results = search(query, graph, index, top_k=top)
+
+    if not results:
+        typer.echo("No matching symbols found.")
+        raise typer.Exit(0)
+
+    typer.echo(f"Found {len(results)} result(s) for '{query}':")
+    for i, r in enumerate(results, 1):
+        node = r.node
+        kind_emoji = {"function": "⚙️", "class": "📦", "module": "📁"}.get(node.get("kind"), "🔹")
+        lang_label = f" [{node.get('language', '?')}]" if node.get("language") else ""
+        typer.echo(f"  {i}. {kind_emoji} {node['name']} ({node['kind']}){lang_label} — {node['filepath']}:{node['line']}")
+        typer.echo(f"     Score: {r.score:.3f} | Matched: {', '.join(r.matched_ngrams)}")
+        typer.echo(f"     {r.snippet}")
+
+
+@app.command()
+def serve(
+    graph_path: str = typer.Argument(..., help="Path to the JSON graph file"),
+    host: str = typer.Option("0.0.0.0", "--host", help="Host to bind to"),
+    port: int = typer.Option(8080, "--port", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev mode)"),
+) -> None:
+    """Start the GraphQL API server with GraphiQL playground."""
+    path = Path(graph_path).resolve()
+    if not path.exists():
+        typer.echo(f"Error: graph file not found: {path}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Starting SCKG GraphQL server on http://{host}:{port}")
+    typer.echo(f"GraphQL Playground: http://{host}:{port}/graphql")
+    typer.echo(f"Graph: {path}")
+    run_server(path, host=host, port=port, reload=reload)
+
+
+@app.command()
+def graphql_schema(
+    output: str = typer.Option(None, "--output", "-o", help="Output file (stdout if omitted)"),
+) -> None:
+    """Print the GraphQL schema (SDL) to stdout or file."""
+    sdl = str(schema)
+    if output:
+        Path(output).write_text(sdl, encoding="utf-8")
+        typer.echo(f"Schema written to {output}")
+    else:
+        typer.echo(sdl)

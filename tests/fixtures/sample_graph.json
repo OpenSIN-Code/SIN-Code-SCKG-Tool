@@ -1,0 +1,140 @@
+{
+  "nodes": [
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::helper",
+      "name": "helper",
+      "kind": "function",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py",
+      "line": 7,
+      "docstring": "Print a greeting message.",
+      "signature": "def helper(name: str)",
+      "parent": null,
+      "language": "python"
+    },
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::UtilityClass",
+      "name": "UtilityClass",
+      "kind": "class",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py",
+      "line": 12,
+      "docstring": "A helper class with common operations.",
+      "signature": "()",
+      "parent": null,
+      "language": "python"
+    },
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::UtilityClass.do_something",
+      "name": "do_something",
+      "kind": "function",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py",
+      "line": 15,
+      "docstring": "Perform some utility action.",
+      "signature": "def do_something(self)",
+      "parent": "UtilityClass",
+      "language": "python"
+    },
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass",
+      "name": "MainClass",
+      "kind": "class",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py",
+      "line": 9,
+      "docstring": "The main class that orchestrates work.",
+      "signature": "()",
+      "parent": null,
+      "language": "python"
+    },
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.__init__",
+      "name": "__init__",
+      "kind": "function",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py",
+      "line": 12,
+      "docstring": "",
+      "signature": "def __init__(self)",
+      "parent": "MainClass",
+      "language": "python"
+    },
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.run",
+      "name": "run",
+      "kind": "function",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py",
+      "line": 15,
+      "docstring": "Execute the main workflow.",
+      "signature": "def run(self)",
+      "parent": "MainClass",
+      "language": "python"
+    },
+    {
+      "id": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::main",
+      "name": "main",
+      "kind": "function",
+      "filepath": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py",
+      "line": 22,
+      "docstring": "CLI entry point.",
+      "signature": "def main()",
+      "parent": null,
+      "language": "python"
+    }
+  ],
+  "edges": [
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::helper",
+      "target": "print",
+      "relation": "calls",
+      "line": 9
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py",
+      "target": "utils.helper",
+      "relation": "imports",
+      "line": 6
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py",
+      "target": "utils.UtilityClass",
+      "relation": "imports",
+      "line": 6
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.run",
+      "target": "helper",
+      "relation": "calls",
+      "line": 17
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.run",
+      "target": "UtilityClass",
+      "relation": "calls",
+      "line": 18
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.run",
+      "target": "inst.do_something",
+      "relation": "calls",
+      "line": 19
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::main",
+      "target": "MainClass",
+      "relation": "calls",
+      "line": 24
+    },
+    {
+      "source": "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::main",
+      "target": "app.run",
+      "relation": "calls",
+      "line": 25
+    }
+  ],
+  "communities": {
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::helper": "community_0",
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::UtilityClass": "community_0",
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/utils.py::UtilityClass.do_something": "community_0",
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass": "community_0",
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.__init__": "community_0",
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::MainClass.run": "community_0",
+    "/Users/jeremy/dev/SIN-Code-SCKG-Tool/tests/fixtures/sample_project/main.py::main": "community_0"
+  }
+}

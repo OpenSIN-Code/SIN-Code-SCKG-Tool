@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-06 — Hot-paths, N-gram search, GraphQL API
+
+### Added
+- **Hot-paths detection** (`sckg hot-paths` CLI) — ranks functions by centrality (in/out degree, betweenness, PageRank)
+- Hot-path visualization: gold border + glow + size-scaled nodes in D3.js graph
+- **N-gram semantic search** (`sckg search` CLI) — BM25-ranked fuzzy search over names, docstrings, params, calls
+- Search panel in HTML: real-time results, click to center node
+- Pattern search: `sckg search --pattern "handle_*"` for wildcard matching
+- **GraphQL API server** (`sckg serve` CLI) — FastAPI + Strawberry GraphQL with GraphiQL playground
+- GraphQL schema: nodes, edges, communities, hot_paths, dead_code, search, stats queries
+- `sckg graphql-schema` CLI — prints SDL for codegen
+- REST endpoints: `/health`, `/schema`, `/stats`
+- 16 new tests (hotpaths: 5, search: 5, API: 6) — 64 total tests, 100% passing
+
+### Changed
+- `html_generator.py` extended with hot-path styling, search UI panel, GraphQL playground link
+- `cli.py` added `search`, `serve`, `graphql-schema` commands
+- `graph` command now includes hot-path data in HTML output
+- Dependencies: added `strawberry-graphql`, `fastapi`, `uvicorn`, `httpx`, `pytest-asyncio`
+
+### Fixed
+- CamelCase tokenizer now correctly splits `parseJSONResponse` → `["parse", "json", "response"]`
+- GraphQL Router updated for Strawberry 0.260+ (`graphql_ide` param)
+
 ## [0.3.0] - 2026-06-06 — Cross-repo edges, dead-code detection, language-aware communities
 
 ### Added
