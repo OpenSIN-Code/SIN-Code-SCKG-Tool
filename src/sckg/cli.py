@@ -12,7 +12,7 @@ import typer
 
 from sckg.graph import KnowledgeGraph
 from sckg.html_generator import generate_html
-from sckg.parser import parse_directory
+from sckg.parsers import parse_directory
 
 app = typer.Typer(help="SCKG — Semantic Codebase Knowledge Graphs")
 
@@ -49,6 +49,7 @@ def query(
     repo_path: str = typer.Argument(..., help="Path to the repository (or path to existing JSON graph)"),
     q: str = typer.Argument(..., help="Natural language query"),
     limit: int = typer.Option(10, "--limit", "-n", help="Max number of results"),
+    language: str = typer.Option(None, "--language", "--language-filter", help="Filter results by language (python, go, typescript, ...)"),
 ) -> None:
     """Query the knowledge graph for relevant symbols."""
     repo = Path(repo_path).resolve()
@@ -66,6 +67,8 @@ def query(
         graph.build_from_parser(symbols, edges)
 
     results = graph.find_symbol(q)[:limit]
+    if language:
+        results = [r for r in results if r.get("language") == language]
     if not results:
         typer.echo("No matching symbols found.")
         raise typer.Exit(0)
@@ -73,7 +76,8 @@ def query(
     typer.echo(f"Found {len(results)} result(s) for '{q}':")
     for i, node in enumerate(results, 1):
         kind_emoji = {"function": "⚙️", "class": "📦", "module": "📁"}.get(node["kind"], "🔹")
-        typer.echo(f"  {i}. {kind_emoji} {node['name']} ({node['kind']}) — {node['filepath']}:{node['line']}")
+        lang_label = f" [{node.get('language', '?')}]" if node.get("language") else ""
+        typer.echo(f"  {i}. {kind_emoji} {node['name']} ({node['kind']}){lang_label} — {node['filepath']}:{node['line']}")
         if node.get("signature"):
             typer.echo(f"     Sig: {node['signature']}")
 

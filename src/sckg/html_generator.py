@@ -7,9 +7,24 @@ import json
 from pathlib import Path
 from typing import Any
 
+# Language → color mapping used for node fill in the D3 graph.
+LANGUAGE_COLORS = {
+    "python": "#4A90D9",
+    "go": "#00ADD8",
+    "typescript": "#3178C6",
+    "javascript": "#F7DF1E",
+}
+
+DEFAULT_LANGUAGE_COLOR = "#999"
+
 
 def generate_html(graph_data: dict[str, Any], output_path: str | Path) -> Path:
-    """Write a single-file HTML with embedded D3.js force graph."""
+    """Write a single-file HTML with embedded D3.js force graph.
+
+    Nodes are colored by programming language. A language legend is rendered
+    in the top-right corner. Unsupported languages fall back to community
+    colors (if available) or grey.
+    """
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -17,7 +32,7 @@ def generate_html(graph_data: dict[str, Any], output_path: str | Path) -> Path:
     edges = graph_data.get("edges", [])
     communities = graph_data.get("communities", {})
 
-    # Assign community colors
+    # Assign community colors as fallback
     community_colors = [
         "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
         "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
@@ -26,8 +41,12 @@ def generate_html(graph_data: dict[str, Any], output_path: str | Path) -> Path:
     for i, comm in enumerate(set(communities.values())):
         comm_to_color[comm] = community_colors[i % len(community_colors)]
 
+    # Determine which languages are present so the legend only shows active ones
+    active_languages = {n.get("language") for n in nodes if n.get("language")}
+
     for n in nodes:
-        n["color"] = comm_to_color.get(communities.get(n["id"], "default"), "#999")
+        lang = n.get("language")
+        n["color"] = LANGUAGE_COLORS.get(lang, comm_to_color.get(communities.get(n["id"], "default"), DEFAULT_LANGUAGE_COLOR))
         n["radius"] = 8 if n.get("kind") == "function" else 10 if n.get("kind") == "class" else 6
 
     html = f"""<!DOCTYPE html>
@@ -53,6 +72,10 @@ def generate_html(graph_data: dict[str, Any], output_path: str | Path) -> Path:
     position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7);
     padding: 10px; border-radius: 8px; font-size: 12px;
   }}
+  #language-legend {{
+    position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7);
+    padding: 10px; border-radius: 8px; font-size: 12px;
+  }}
   .legend-item {{ display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }}
   .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
 </style>
@@ -64,7 +87,12 @@ def generate_html(graph_data: dict[str, Any], output_path: str | Path) -> Path:
   <p>Nodes: {len(nodes)} | Edges: {len(edges)}</p>
   <p>Click a node to see details.</p>
 </div>
+<div id="language-legend">
+  <div style="font-weight:bold; margin-bottom:6px;">Language</div>
+  {''.join(f'<div class="legend-item"><div class="legend-dot" style="background:{LANGUAGE_COLORS.get(lang, DEFAULT_LANGUAGE_COLOR)}"></div>{lang.capitalize()}</div>' for lang in sorted(active_languages))}
+</div>
 <div id="legend">
+  <div style="font-weight:bold; margin-bottom:6px;">Kind</div>
   <div class="legend-item"><div class="legend-dot" style="background:#ff7f0e"></div>Function</div>
   <div class="legend-item"><div class="legend-dot" style="background:#1f77b4"></div>Class</div>
   <div class="legend-item"><div class="legend-dot" style="background:#2ca02c"></div>Module</div>
@@ -118,6 +146,7 @@ node.on("click", (event, d) => {{
   const info = document.getElementById("info");
   info.innerHTML = `<h3>${{d.name}}</h3>
     <p><strong>Kind:</strong> ${{d.kind}}</p>
+    <p><strong>Language:</strong> ${{d.language || "unknown"}}</p>
     <p><strong>File:</strong> ${{d.filepath}}</p>
     <p><strong>Line:</strong> ${{d.line}}</p>
     <p><strong>Signature:</strong> <code>${{d.signature || "N/A"}}</code></p>

@@ -1,6 +1,6 @@
-"""AST-based source code parser for symbol and edge extraction.
+"""Base data structures shared across all language parsers.
 
-Docs: parser.doc.md
+Docs: parsers/base.doc.md
 """
 
 from __future__ import annotations
@@ -8,20 +8,19 @@ from __future__ import annotations
 from typing import Any
 
 
-# ── Data Structures ───────────────────────────────────────────────────────
-
 class SymbolNode:
     """Represents a code symbol (function, class, variable, module, etc.)."""
 
     def __init__(
         self,
         name: str,
-        kind: str,  # function | class | module | variable | struct | interface | method | type
+        kind: str,  # function | class | module | variable | struct | interface | method | component
         filepath: str,
         line: int = 0,
         docstring: str = "",
         signature: str = "",
         parent: str | None = None,
+        language: str = "python",
     ):
         self.name = name
         self.kind = kind
@@ -30,6 +29,7 @@ class SymbolNode:
         self.docstring = docstring
         self.signature = signature
         self.parent = parent
+        self.language = language
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +41,7 @@ class SymbolNode:
             "docstring": self.docstring,
             "signature": self.signature,
             "parent": self.parent,
+            "language": self.language,
         }
 
     def _id(self) -> str:
@@ -66,7 +67,3 @@ class Edge:
             "relation": self.relation,
             "line": self.line,
         }
-
-
-# Re-export dispatcher API so existing callers (cli.py, graph.py, tests) keep working.
-from sckg.parsers import parse_directory, parse_file  # noqa: E402,F401

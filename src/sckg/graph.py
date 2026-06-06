@@ -11,7 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from sckg.parser import Edge, SymbolNode
+from sckg.parsers.base import Edge, SymbolNode
 
 
 class KnowledgeGraph:

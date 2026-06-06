@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sckg"
-version = "0.1.0"
-description = "Semantic Codebase Knowledge Graphs — Python-native code intelligence graph"
+version = "0.2.0"
+description = "Semantic Codebase Knowledge Graphs \u2014 Python-native code intelligence graph"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -22,6 +22,8 @@ classifiers = [
 
 dependencies = [
     "typer>=0.9.0",
+    "tree-sitter>=0.23.0",
+    "tree-sitter-go>=0.25.0",
 ]
 
 [project.optional-dependencies]
