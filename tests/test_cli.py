@@ -14,13 +14,14 @@ from sckg.cli import app
 runner = CliRunner()
 
 FIXTURES = Path(__file__).with_name("fixtures") / "sample_project"
+DEAD_CODE_FIXTURES = Path(__file__).with_name("fixtures") / "dead_code_sample"
 
 
-def test_cli_help_shows_three_commands() -> None:
-    """sckg --help should list index, query, and graph commands."""
+def test_cli_help_shows_commands() -> None:
+    """sckg --help should list index, query, graph, and dead-code commands."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("index", "query", "graph"):
+    for cmd in ("index", "query", "graph", "dead-code"):
         assert cmd in result.output, f"Command {cmd} missing from help"
 
 
@@ -64,3 +65,30 @@ def test_graph_creates_html_with_d3js() -> None:
     assert "forceLink" in html
     assert "forceCenter" in html
     Path(out_path).unlink()
+
+
+def test_dead_code_finds_format_data() -> None:
+    """sckg dead-code should flag format_data as dead and main as entry point."""
+    result = runner.invoke(app, ["dead-code", str(DEAD_CODE_FIXTURES)])
+    assert result.exit_code == 1, result.output  # dead code found
+    data = json.loads(result.output.split("\nSummary:")[0])
+    dead_names = {n["name"] for n in data["dead_nodes"]}
+    entry_names = {n["name"] for n in data["entry_points"]}
+    assert "format_data" in dead_names, f"Expected format_data in dead nodes, got {dead_names}"
+    assert "main" in entry_names, f"Expected main in entry points, got {entry_names}"
+
+
+def test_dead_code_threshold_fails() -> None:
+    """sckg dead-code --threshold 0.9 should exit 1 when coverage < 90%."""
+    result = runner.invoke(app, ["dead-code", str(DEAD_CODE_FIXTURES), "--threshold", "0.9"])
+    assert result.exit_code == 1, result.output
+    assert "coverage" in result.output.lower() or "below" in result.output.lower()
+
+
+def test_dead_code_include_suspicious() -> None:
+    """sckg dead-code --include-suspicious should include 1-edge nodes."""
+    result = runner.invoke(app, ["dead-code", str(DEAD_CODE_FIXTURES), "--include-suspicious"])
+    assert result.exit_code == 1, result.output
+    data = json.loads(result.output.split("\nSummary:")[0])
+    suspicious_names = {n["name"] for n in data.get("suspicious_nodes", [])}
+    assert "unused" in suspicious_names, f"Expected unused in suspicious nodes, got {suspicious_names}"
