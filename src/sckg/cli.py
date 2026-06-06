@@ -22,6 +22,8 @@ from sckg.api.server import create_app, run_server
 from sckg.watcher import FileWatcher, watch_and_serve
 from sckg.similarity import find_similar
 from sckg.adr import generate_adrs
+from sckg.dashboard import generate_dashboard
+from sckg.hybrid_search import hybrid_search
 
 app = typer.Typer(help="SCKG — Semantic Codebase Knowledge Graphs")
 
@@ -359,6 +361,8 @@ def search(
     top: int = typer.Option(10, "--top", "-n", help="Number of results to return"),
     ngram_size: str = typer.Option("1,2,3", "--ngram-size", help="Comma-separated n-gram sizes (e.g., 1,2,3)"),
     pattern: bool = typer.Option(False, "--pattern", "-p", help="Use wildcard pattern search instead of n-gram search"),
+    hybrid: bool = typer.Option(False, "--hybrid", help="Use hybrid search (n-gram + structural similarity)"),
+    alpha: float = typer.Option(0.5, "--alpha", help="Hybrid alpha: weight for n-gram (0.0-1.0, 1.0=pure n-gram)"),
 ) -> None:
     """Search the knowledge graph for symbols matching the query."""
     repo = Path(repo_path).resolve()
@@ -376,9 +380,31 @@ def search(
 
     if pattern:
         results = search_pattern(query, graph, top_k=top)
-    else:
+        for i, r in enumerate(results, 1):
+            node = r.node
+            kind_emoji = {"function": "⚙️", "class": "📦", "module": "📁"}.get(node.get("kind"), "🔹")
+            lang_label = f" [{node.get('language', '?')}]" if node.get("language") else ""
+            typer.echo(f"  {i}. {kind_emoji} {node['name']} ({node['kind']}){lang_label} — {node['filepath']}:{node['line']}")
+            typer.echo(f"     {r.snippet}")
+        return
+
+    if hybrid:
         index = build_ngram_index(graph)
-        results = search(query, graph, index, top_k=top)
+        hybrid_results = hybrid_search(query, graph, index, top_k=top, alpha=alpha)
+        if not hybrid_results:
+            typer.echo("No matching symbols found.")
+            raise typer.Exit(0)
+        typer.echo(f"Found {len(hybrid_results)} hybrid result(s) for '{query}' (alpha={alpha}):")
+        for i, r in enumerate(hybrid_results, 1):
+            node = r.node
+            kind_emoji = {"function": "⚙️", "class": "📦", "module": "📁"}.get(node.get("kind"), "🔹")
+            lang_label = f" [{node.get('language', '?')}]" if node.get("language") else ""
+            typer.echo(f"  {i}. {kind_emoji} {node['name']} ({node['kind']}){lang_label} — {node['filepath']}:{node['line']}")
+            typer.echo(f"     Combined: {r.score:.3f} | N-gram: {r.ngram_score:.3f} | Similarity: {r.similarity_score:.3f}")
+        return
+
+    index = build_ngram_index(graph)
+    results = search(query, graph, index, top_k=top)
 
     if not results:
         typer.echo("No matching symbols found.")
@@ -526,3 +552,34 @@ def adr(
     typer.echo(f"Generated {len(adrs)} ADR(s) in {out_dir}:")
     for adr in adrs:
         typer.echo(f"  {adr.id}: {adr.title} [{adr.status}]")
+
+
+@app.command()
+def dashboard(
+    repo_path: str = typer.Argument(..., help="Path to the repository (or path to existing JSON graph)"),
+    output: str = typer.Option("dashboard.html", "--output", "-o", help="Path for the HTML dashboard output"),
+    workspace: str = typer.Option(None, "--workspace", help="Workspace path for display (e.g., ~/dev)"),
+    graphql: str = typer.Option("ws://localhost:8080/graphql", "--graphql", help="GraphQL WebSocket URL for live updates"),
+) -> None:
+    """Generate a multi-repo dashboard HTML with chord diagram and live updates."""
+    repo = Path(repo_path).resolve()
+
+    if repo.is_file() and repo.suffix == ".json":
+        graph = KnowledgeGraph()
+        graph.load_json(repo)
+    else:
+        if not repo.exists():
+            typer.echo(f"Error: path not found: {repo}", err=True)
+            raise typer.Exit(1)
+        symbols, edges = parse_directory(repo)
+        graph = KnowledgeGraph()
+        graph.build_from_parser(symbols, edges)
+
+    out_path = generate_dashboard(
+        graph,
+        Path(output),
+        workspace_path=workspace or str(repo),
+        graphql_url=graphql,
+    )
+    typer.echo(f"Dashboard written to {out_path}")
+    typer.echo(f"Open it with: open {out_path}")

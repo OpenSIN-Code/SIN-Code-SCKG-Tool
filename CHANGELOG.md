@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-06 — Dashboard, Hybrid Search, Performance, Watcher+Subscriptions
+
+### Added
+- **GraphQL Subscriptions Integration in Watcher** — `publish_graph_updated()` and `publish_node_changed()` called on file changes for real-time dashboard updates
+- **Multi-Repo Dashboard** (`sckg dashboard` CLI) — standalone HTML with D3.js chord diagram for cross-repo calls, repo comparison table, community overview, hot paths per repo, dead code per repo
+- **Live WebSocket events log** in dashboard — shows real-time updates from GraphQL subscriptions
+- **Hybrid Code Search** (`sckg search --hybrid` CLI) — combines BM25 n-gram with AST structural similarity
+- **Alpha parameter** for hybrid search (`--alpha 0.5`) — control n-gram vs similarity weight
+- **Performance module** (`sckg.performance`) — orjson fast JSON serialization, IndexedGraph with lazy-built indices
+- **IndexedGraph** — O(1) lookups by repo/language/type/file instead of full graph scan
+- 19 new tests (dashboard: 5, hybrid_search: 7, performance: 7) — 96 total tests, 100% passing
+
+### Changed
+- `watcher.py` now publishes GraphQL subscription events on file changes
+- `cli.py` added `dashboard` command, `--hybrid` flag on `search`
+- Dependencies: added `orjson>=3.9.0`
+
+### Fixed
+- N/A (all additions, no breaking changes)
+
 ## [0.5.0] - 2026-06-06 — Cross-repo GraphQL, Incremental Watcher, Code Similarity, ADR Export, Subscriptions
 
 ### Added

@@ -19,6 +19,7 @@ from watchdog.observers import Observer
 from sckg.graph import KnowledgeGraph
 from sckg.parser import parse_file
 from sckg.parsers.base import SymbolNode, Edge
+from sckg.api.resolvers import publish_graph_updated, publish_node_changed
 
 
 class DebouncedFileHandler(FileSystemEventHandler):
@@ -96,14 +97,21 @@ class FileWatcher:
     def _on_file_change(self, file_path: Path) -> None:
         """Handle a file change by re-parsing and updating the graph."""
         try:
+            repo_name = self.repo_path.name
             if file_path.exists():
                 # Re-parse the file
                 symbols, edges = parse_file(file_path)
                 # Update graph
                 self.graph.upsert_file(str(file_path), symbols, edges)
+                # Publish GraphQL subscription events
+                for sym in symbols:
+                    publish_node_changed(repo_name, sym._id(), "updated")
+                publish_graph_updated(f"File updated: {file_path}")
             else:
                 # File deleted - remove from graph
                 self.graph.remove_nodes_by_file(str(file_path))
+                publish_graph_updated(f"File deleted: {file_path}")
+                publish_node_changed(repo_name, str(file_path), "deleted")
 
             # Trigger callback
             if self.on_update:
